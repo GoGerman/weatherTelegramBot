@@ -7,7 +7,7 @@ import (
 
 	"github.com/pkg/errors"
 
-	"github.com/your_username/go-telegram-bot/pkg/telegram"
+	"github.com/GoGerman/weatherTelegramBot/telegram"
 )
 
 // PostgresRepo is a PostgreSQL implementation of the storage.Repository interface
