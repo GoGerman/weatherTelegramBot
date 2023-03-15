@@ -3,43 +3,30 @@ package main
 import (
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/go-telegram-bot-api/telegram-bot-api"
 	_ "github.com/mattn/go-sqlite3"
 )
 
+type dbConfig struct{ user, password, host, port, dbName string }
+
 var db *sql.DB
 
-type dbConfig struct {
-	user     string
-	password string
-	host     string
-	port     string
-	dbName   string
-}
-
 func main() {
-	dbCfg := dbConfig{
-		user:     "user",
-		password: "password",
-		host:     "localhost",
-		port:     "3306",
-		dbName:   "111",
-	}
-
-	// Подключаемся к базе данных
-	db, err := dbConnect(dbCfg, db)
+	dbCfg := dbConfig{user: "user", password: "password", host: "localhost", port: "3306", dbName: "111"}
+	var err error
+	db, err = sql.Open("sqlite3", dbCfg.dbName)
 	if err != nil {
 		log.Fatalf("Unable to connect to database: %v\n", err)
 	}
-
+	err = createTables(db)
+	if err != nil {
+		log.Fatalf("Cannot create database: %v\n", err)
+	}
 	defer db.Close()
 
 	bot, err := tgbotapi.NewBotAPI("6225684885:AAHhd4JF6cIO1eEZ9Vo5jaQvB4A_z9bIQbE")
@@ -56,15 +43,13 @@ func main() {
 			continue
 		}
 
-		userID := update.Message.From.ID
-		command := update.Message.Command()
+		userID, command := update.Message.From.ID, update.Message.Command()
 
 		if command == "" {
 			continue
 		}
 
-		err := saveRequest(userID, update.Message.From.UserName, command)
-		if err != nil {
+		if err := saveRequest(userID, update.Message.From.UserName, command); err != nil {
 			log.Printf("Unable to save request: %v\n", err)
 		}
 
@@ -75,8 +60,7 @@ func main() {
 			handleStatCommand(bot, &update)
 		default:
 			msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Unknown command")
-			_, err = bot.Send(msg)
-			if err != nil {
+			if _, err := bot.Send(msg); err != nil {
 				log.Printf("Unable to send message: %v\n", err)
 			}
 		}
@@ -85,46 +69,49 @@ func main() {
 
 func handleInfoCommand(bot *tgbotapi.BotAPI, update *tgbotapi.Update) {
 	city := update.Message.CommandArguments()
-
 	weather, err := getWeather(city)
 	if err != nil {
 		log.Printf("Can't get weather: %v\n", err)
 	}
 
 	msg := tgbotapi.NewMessage(update.Message.Chat.ID, weather)
-	_, err = bot.Send(msg)
-	if err != nil {
+	if _, err := bot.Send(msg); err != nil {
 		log.Printf("Unable to send message: %v\n", err)
 	}
 }
 
 func handleStatCommand(bot *tgbotapi.BotAPI, update *tgbotapi.Update) {
 	userID := update.Message.From.ID
-
 	var totalRequests int
 	var firstRequestTime time.Time
 
-	row := db.QueryRow("SELECT COUNT(*), MIN(request_time) FROM users WHERE id = ?", userID)
-	err := row.Scan(&totalRequests, &firstRequestTime)
+	err := db.QueryRow("SELECT COUNT(*), MIN(CAST(request_time AS DATETIME)) FROM users WHERE id = ?", userID).
+		Scan(&totalRequests, &firstRequestTime)
+
 	if err != nil {
 		log.Printf("Unable to get user requests: %v\n", err)
 	}
 
 	msg := tgbotapi.NewMessage(update.Message.Chat.ID,
-		fmt.Sprintf("Total requests: %d\nFirst request time: %s",
-			totalRequests, firstRequestTime.Format("2006-01-02 15:04:05")))
-	_, err = bot.Send(msg)
-	if err != nil {
+		fmt.Sprintf("Total requests: %d\nFirst request time: %v",
+			totalRequests, firstRequestTime))
+
+	if _, err := bot.Send(msg); err != nil {
 		log.Printf("Unable to send message: %v\n", err)
 	}
 }
 
 func saveRequest(userID int, username, command string) error {
-	if db == nil {
-		return errors.New("database connection is nil")
+	stmt, err := db.Prepare(`
+       INSERT INTO users (id, username, request_time, command)
+       VALUES (:id, :username, :request_time, :command)
+   `)
+	if err != nil {
+		return err
 	}
+	defer stmt.Close()
 
-	_, err := db.Exec("INSERT INTO users (id, username, request_time, command) VALUES (?, ?, datetime('now'), ?)", userID, username, command)
+	_, err = stmt.Exec(sql.Named("id", userID), sql.Named("username", username), sql.Named("request_time", time.Now()), sql.Named("command", command))
 	if err != nil {
 		return err
 	}
@@ -133,20 +120,12 @@ func saveRequest(userID int, username, command string) error {
 }
 
 func getWeather(city string) (string, error) {
-	apiKey := "78cfb04016855233daaf20a3817aefa3"
-	url := fmt.Sprintf("https://api.openweathermap.org/data/2.5/weather?q=%s&appid=%s",
-		city, apiKey)
-
-	resp, err := http.Get(url)
+	resp, err := http.Get(fmt.Sprintf("https://api.openweathermap.org/data/2.5/weather?q=%s&appid=%s",
+		city, "78cfb04016855233daaf20a3817aefa3"))
 	if err != nil {
 		return "", err
 	}
 	defer resp.Body.Close()
-
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return "", err
-	}
 
 	var weatherData struct {
 		Main struct {
@@ -158,49 +137,22 @@ func getWeather(city string) (string, error) {
 		} `json:"wind"`
 	}
 
-	err = json.Unmarshal(body, &weatherData)
-	if err != nil {
+	if err := json.NewDecoder(resp.Body).Decode(&weatherData); err != nil {
 		return "", err
 	}
 
-	temperature := strconv.FormatFloat(weatherData.Main.Temp-273.15, 'f', 1, 64)
-	humidity := strconv.Itoa(weatherData.Main.Humidity)
-	windSpeed := strconv.FormatFloat(weatherData.Wind.Speed, 'f', 1, 64)
-
-	return fmt.Sprintf("Temperature: %s°C\nHumidity: %s%%\nWind Speed: %s m/s",
-		temperature, humidity, windSpeed), nil
+	return fmt.Sprintf("Temperature: %.1f°C\nHumidity: %d%%\nWind Speed: %.1f m/s",
+		weatherData.Main.Temp-273.15, weatherData.Main.Humidity, weatherData.Wind.Speed), nil
 }
 
-func dbConnect(cfg dbConfig, db *sql.DB) (*sql.DB, error) {
-	var err error
-	db, err = sql.Open("sqlite3", cfg.dbName)
-	if err != nil {
-		return nil, err
-	}
-
-	db, err = createTables(db)
-
-	if err := db.Ping(); err != nil {
-		log.Println("Unable to ping database: %v\n", err)
-		return nil, err
-	}
-
-	return db, nil
-}
-
-func createTables(db *sql.DB) (*sql.DB, error) {
-	statement, err := db.Prepare(`
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY,
-            username TEXT, 
-            command TEXT,
-            request_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        );
-    `)
-	statement.Exec()
-
-	if err != nil {
-		return db, err
-	}
-	return db, nil
+func createTables(db *sql.DB) error {
+	_, err := db.Exec(`
+		CREATE TABLE IF NOT EXISTS users (
+		    id INTEGER PRIMARY KEY,
+			username TEXT,
+			command TEXT,
+			request_time TIMESTAMP
+		);
+	`)
+	return err
 }
