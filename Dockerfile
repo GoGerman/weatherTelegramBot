@@ -1,5 +1,11 @@
 FROM golang
 
-COPY . .
+COPY . /weatherTelegramBot
 
-CMD ["go run main.go"]
+WORKDIR /weatherTelegramBot
+
+RUN go get -d -v ./...
+
+RUN go install -v ./...
+
+CMD ["bash", "-c", "go run main.go"]

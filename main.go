@@ -23,7 +23,6 @@ type dbConfig struct {
 	host     string
 	port     string
 	dbName   string
-	dbType   string
 }
 
 func main() {
@@ -32,12 +31,11 @@ func main() {
 		password: "password",
 		host:     "localhost",
 		port:     "3306",
-		dbName:   "dbApisUser",
-		dbType:   "sqlite3",
+		dbName:   "111",
 	}
 
 	// Подключаемся к базе данных
-	db, err := dbConnect(dbCfg)
+	db, err := dbConnect(dbCfg, db)
 	if err != nil {
 		log.Fatalf("Unable to connect to database: %v\n", err)
 	}
@@ -173,32 +171,36 @@ func getWeather(city string) (string, error) {
 		temperature, humidity, windSpeed), nil
 }
 
-func dbConnect(cfg dbConfig) (*sql.DB, error) {
-	db, err := sql.Open(cfg.dbType, cfg.dbName)
+func dbConnect(cfg dbConfig, db *sql.DB) (*sql.DB, error) {
+	var err error
+	db, err = sql.Open("sqlite3", cfg.dbName)
 	if err != nil {
 		return nil, err
 	}
 
-	err = db.Ping()
-	if err != nil {
+	db, err = createTables(db)
+
+	if err := db.Ping(); err != nil {
+		log.Println("Unable to ping database: %v\n", err)
 		return nil, err
 	}
 
 	return db, nil
 }
 
-func createTables(db *sql.DB) error {
-	_, err := db.Exec(`
+func createTables(db *sql.DB) (*sql.DB, error) {
+	statement, err := db.Prepare(`
         CREATE TABLE IF NOT EXISTS users (
-            id INT NOT NULL AUTO_INCREMENT,
-            PRIMARY KEY (id),
-            username varchar(255), 
-            command varchar(255),
+            id INTEGER PRIMARY KEY,
+            username TEXT, 
+            command TEXT,
             request_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         );
     `)
+	statement.Exec()
+
 	if err != nil {
-		return err
+		return db, err
 	}
-	return nil
+	return db, nil
 }
