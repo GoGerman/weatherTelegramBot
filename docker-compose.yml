@@ -1,0 +1,17 @@
+version: '3'
+
+services:
+  app:
+    container_name: app
+    build: .
+    ports:
+      - "8080:8080"
+    depends_on:
+      - db
+
+  db:
+    container_name: db
+    image: sqlite
+    restart: always
+    volumes:
+      - ./data:/var/lib/sqlite

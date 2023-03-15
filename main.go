@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -120,12 +121,16 @@ func handleStatCommand(bot *tgbotapi.BotAPI, update *tgbotapi.Update) {
 	}
 }
 
-func saveRequest(userID int, username string, command string) error {
-	_, err := db.Exec("INSERT INTO users(id, username, command, request_time) VALUES (?, ?, ?, ?)",
-		userID, username, command, time.Now())
-	if err != nil {
-		return fmt.Errorf("unable to save request: %v", err)
+func saveRequest(userID int, username, command string) error {
+	if db == nil {
+		return errors.New("database connection is nil")
 	}
+
+	_, err := db.Exec("INSERT INTO users (id, username, request_time, command) VALUES (?, ?, datetime('now'), ?)", userID, username, command)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -168,30 +173,13 @@ func getWeather(city string) (string, error) {
 		temperature, humidity, windSpeed), nil
 }
 
-func dbConnect(config dbConfig) (*sql.DB, error) {
-	db, err := sql.Open(config.dbType, config.dbName)
-	if err != nil {
-		return nil, err
-	}
-	if err := db.Ping(); err != nil {
-		db.Close()
-		return nil, err
-	}
-
-	// Создание базы данных
-	_, err = db.Exec(fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s", config.dbName))
+func dbConnect(cfg dbConfig) (*sql.DB, error) {
+	db, err := sql.Open(cfg.dbType, cfg.dbName)
 	if err != nil {
 		return nil, err
 	}
 
-	// Выбор базы данных
-	_, err = db.Exec(fmt.Sprintf("USE %s", config.dbName))
-	if err != nil {
-		return nil, err
-	}
-
-	// Создание таблицы
-	err = createTables(db)
+	err = db.Ping()
 	if err != nil {
 		return nil, err
 	}
