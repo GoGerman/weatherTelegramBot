@@ -58,14 +58,13 @@ func main() {
 		}
 
 		userID := update.Message.From.ID
-		username := update.Message.From.UserName
 		command := update.Message.Command()
 
 		if command == "" {
 			continue
 		}
 
-		err := saveRequest(userID, username, command)
+		err := saveRequest(userID, update.Message.From.UserName, command)
 		if err != nil {
 			log.Printf("Unable to save request: %v\n", err)
 		}
@@ -102,9 +101,6 @@ func handleInfoCommand(bot *tgbotapi.BotAPI, update *tgbotapi.Update) {
 
 func handleStatCommand(bot *tgbotapi.BotAPI, update *tgbotapi.Update) {
 	userID := update.Message.From.ID
-	username := update.Message.From.UserName
-
-	_ = username
 
 	var totalRequests int
 	var firstRequestTime time.Time
@@ -115,7 +111,9 @@ func handleStatCommand(bot *tgbotapi.BotAPI, update *tgbotapi.Update) {
 		log.Printf("Unable to get user requests: %v\n", err)
 	}
 
-	msg := tgbotapi.NewMessage(update.Message.Chat.ID, fmt.Sprintf("Total requests: %d\nFirst request time: %s", totalRequests, firstRequestTime.Format("2006-01-02 15:04:05")))
+	msg := tgbotapi.NewMessage(update.Message.Chat.ID,
+		fmt.Sprintf("Total requests: %d\nFirst request time: %s",
+			totalRequests, firstRequestTime.Format("2006-01-02 15:04:05")))
 	_, err = bot.Send(msg)
 	if err != nil {
 		log.Printf("Unable to send message: %v\n", err)
@@ -123,7 +121,8 @@ func handleStatCommand(bot *tgbotapi.BotAPI, update *tgbotapi.Update) {
 }
 
 func saveRequest(userID int, username string, command string) error {
-	_, err := db.Exec("INSERT INTO users(id, username, command, request_time) VALUES (?, ?, ?, ?)", userID, username, command, time.Now())
+	_, err := db.Exec("INSERT INTO users(id, username, command, request_time) VALUES (?, ?, ?, ?)",
+		userID, username, command, time.Now())
 	if err != nil {
 		return fmt.Errorf("unable to save request: %v", err)
 	}
@@ -132,7 +131,8 @@ func saveRequest(userID int, username string, command string) error {
 
 func getWeather(city string) (string, error) {
 	apiKey := "78cfb04016855233daaf20a3817aefa3"
-	url := fmt.Sprintf("https://api.openweathermap.org/data/2.5/weather?q=%s&appid=%s", city, apiKey)
+	url := fmt.Sprintf("https://api.openweathermap.org/data/2.5/weather?q=%s&appid=%s",
+		city, apiKey)
 
 	resp, err := http.Get(url)
 	if err != nil {
@@ -164,7 +164,8 @@ func getWeather(city string) (string, error) {
 	humidity := strconv.Itoa(weatherData.Main.Humidity)
 	windSpeed := strconv.FormatFloat(weatherData.Wind.Speed, 'f', 1, 64)
 
-	return fmt.Sprintf("Temperature: %s°C\nHumidity: %s%%\nWind Speed: %s m/s", temperature, humidity, windSpeed), nil
+	return fmt.Sprintf("Temperature: %s°C\nHumidity: %s%%\nWind Speed: %s m/s",
+		temperature, humidity, windSpeed), nil
 }
 
 func dbConnect(config dbConfig) (*sql.DB, error) {
