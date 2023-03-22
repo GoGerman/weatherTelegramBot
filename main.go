@@ -25,7 +25,7 @@ func main() {
 	}
 	err = createTables(db)
 	if err != nil {
-		log.Fatalf("Cannot create database: %v\n", err)
+		log.Printf("Cannot create database: %v\n", err)
 	}
 	defer db.Close()
 
@@ -83,9 +83,9 @@ func handleInfoCommand(bot *tgbotapi.BotAPI, update *tgbotapi.Update) {
 func handleStatCommand(bot *tgbotapi.BotAPI, update *tgbotapi.Update) {
 	userID := update.Message.From.ID
 	var totalRequests int
-	var firstRequestTime time.Time
+	var firstRequestTime string
 
-	err := db.QueryRow("SELECT COUNT(*), MIN(CAST(request_time AS DATETIME)) FROM users WHERE id = ?", userID).
+	err := db.QueryRow("select count(*), min(request_time) from users where id = ?", userID).
 		Scan(&totalRequests, &firstRequestTime)
 
 	if err != nil {
@@ -102,9 +102,18 @@ func handleStatCommand(bot *tgbotapi.BotAPI, update *tgbotapi.Update) {
 }
 
 func saveRequest(userID int, username, command string) error {
+	var count int
+	err := db.QueryRow("select count(*) from users where id = ?", userID).Scan(&count)
+	if err != nil {
+		return err
+	}
+	if count > 0 {
+		return nil
+	}
+
 	stmt, err := db.Prepare(`
-       INSERT INTO users (id, username, request_time, command)
-       VALUES (:id, :username, :request_time, :command)
+       insert into users (id, username, request_time, command)
+       values (:id, :username, :request_time, :command)
    `)
 	if err != nil {
 		return err
@@ -141,17 +150,17 @@ func getWeather(city string) (string, error) {
 		return "", err
 	}
 
-	return fmt.Sprintf("Temperature: %.1f°C\nHumidity: %d%%\nWind Speed: %.1f m/s",
+	return fmt.Sprintf("Temperature (Температура): %.1f°C\nHumidity (Видимость): %d%%\nWind Speed (Скорость ветра): %.1f m/s",
 		weatherData.Main.Temp-273.15, weatherData.Main.Humidity, weatherData.Wind.Speed), nil
 }
 
 func createTables(db *sql.DB) error {
 	_, err := db.Exec(`
-		CREATE TABLE IF NOT EXISTS users (
-		    id INTEGER PRIMARY KEY,
+		create table users (
+		    id integer primary key,
 			username TEXT,
 			command TEXT,
-			request_time TIMESTAMP
+			request_time timestamp
 		);
 	`)
 	return err

@@ -1,11 +1,14 @@
-FROM golang
+FROM golang:1.16-alpine
 
-COPY . /weatherTelegramBot
+WORKDIR /go/src/app
 
-WORKDIR /weatherTelegramBot
+COPY . .
 
+RUN apk add --no-cache git
 RUN go get -d -v ./...
 
-RUN go install -v ./...
+RUN go build -o app
 
-CMD ["bash", "-c", "go run main.go"]
+EXPOSE 8080
+
+CMD ["./app"]
