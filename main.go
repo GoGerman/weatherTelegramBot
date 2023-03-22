@@ -84,6 +84,7 @@ func handleStatCommand(bot *tgbotapi.BotAPI, update *tgbotapi.Update) {
 	userID := update.Message.From.ID
 	var totalRequests int
 	var firstRequestTime string
+	totalRequests++
 
 	err := db.QueryRow("select count(*), min(request_time) from users where id = ?", userID).
 		Scan(&totalRequests, &firstRequestTime)
