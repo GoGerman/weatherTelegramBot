@@ -78,15 +78,23 @@ func main() {
 }
 
 func handleInfoCommand(bot *tgbotapi.BotAPI, update *tgbotapi.Update) {
+	var err error
 	city := update.Message.CommandArguments()
-	weather, err := getWeather(city)
-	if err != nil {
-		log.Printf("Can't get weather: %v\n", err)
-	}
+	if city != "" {
+		weather, err := getWeather(city)
+		if err != nil {
+			log.Printf("Can't get weather: %v\n", err)
+		}
 
-	msg := tgbotapi.NewMessage(update.Message.Chat.ID, weather)
-	if _, err = bot.Send(msg); err != nil {
-		log.Printf("Unable to send message: %v\n", err)
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, weather)
+		if _, err = bot.Send(msg); err != nil {
+			log.Printf("Unable to send message: %v\n", err)
+		}
+	} else {
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Укажите город")
+		if _, err = bot.Send(msg); err != nil {
+			log.Printf("Unable to send message: %v\n", err)
+		}
 	}
 }
 
@@ -127,8 +135,6 @@ func saveRequest(userID int, username, command string, totalRequests int) error 
 			return err
 		}
 		defer stmt.Close()
-
-		stmt.Exec()
 
 		_, err = stmt.Exec(userID, username, time.Now(), command, 1)
 		if err != nil {
