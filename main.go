@@ -47,12 +47,19 @@ func main() {
 		userID, command := update.Message.From.ID, update.Message.Command()
 
 		if command == "" {
-			unk := tgbotapi.NewMessage(update.Message.Chat.ID, "Не понял что ты хочешь")
-			bot.Send(unk)
 			continue
 		}
 
-		if err := saveRequest(userID, update.Message.From.UserName, command); err != nil {
+		var totalRequests int
+		err := db.QueryRow("select totalRequests from users where id = ?", userID).Scan(&totalRequests)
+		totalRequests++
+		if err != nil {
+			log.Println("Не могу достать количество запросов")
+		}
+		fmt.Println(totalRequests, 0)
+		err = saveRequest(userID, update.Message.From.UserName, command,
+			totalRequests)
+		if err != nil {
 			log.Printf("Unable to save request: %v\n", err)
 		}
 
@@ -88,7 +95,7 @@ func handleStatCommand(bot *tgbotapi.BotAPI, update *tgbotapi.Update) {
 	var totalRequests int
 	var firstRequestTime string
 
-	err := db.QueryRow("select count(*), min(request_time) from users where id = ?", userID).
+	err := db.QueryRow("select totalRequests, min(request_time) from users where id = ?", userID).
 		Scan(&totalRequests, &firstRequestTime)
 
 	if err != nil {
@@ -104,7 +111,37 @@ func handleStatCommand(bot *tgbotapi.BotAPI, update *tgbotapi.Update) {
 	}
 }
 
-func saveRequest(userID int, username, command string) error {
+//func saveRequest(userID int, username, command string) error {
+//	var count int
+//	err := db.QueryRow("select count(*) from users where id = ?", userID).Scan(&count)
+//	if err != nil {
+//		return err
+//	}
+//	if count > 0 {
+//		return nil
+//	}
+//
+//	stmt, err := db.Prepare(`
+//       insert into users (id, username, request_time, command, totalRequests)
+//       values (?, ?, ?, ?, ?)
+//   `)
+//	if err != nil {
+//		return err
+//	}
+//	defer stmt.Close()
+//
+//	_, err = stmt.Exec(sql.Named("id", userID), sql.Named("username", username),
+//		sql.Named("request_time", time.Now()), sql.Named("command", command),
+//		sql.Named("totalRequests", totalRequests))
+//	if err != nil {
+//		return err
+//	}
+//
+//	return nil
+//}
+
+func saveRequest(userID int, username, command string, totalRequests int) error {
+	fmt.Println(totalRequests, 1)
 	var count int
 	err := db.QueryRow("select count(*) from users where id = ?", userID).Scan(&count)
 	if err != nil {
@@ -115,8 +152,8 @@ func saveRequest(userID int, username, command string) error {
 	}
 
 	stmt, err := db.Prepare(`
-       insert into users (id, username, request_time, command)
-       values (:id, :username, :request_time, :command)
+       insert into users (id, username, request_time, command, totalRequests)
+       values (?, ?, ?, ?, ?)
    `)
 	if err != nil {
 		return err
@@ -124,10 +161,16 @@ func saveRequest(userID int, username, command string) error {
 	defer stmt.Close()
 
 	_, err = stmt.Exec(sql.Named("id", userID), sql.Named("username", username),
-		sql.Named("request_time", time.Now()), sql.Named("command", command))
+		sql.Named("request_time", time.Now()), sql.Named("command", command),
+		sql.Named("totalRequests", totalRequests+1))
 	if err != nil {
 		return err
 	}
+
+	//_, err = stmt.Exec("insert into users (totalRequests = ?) where id = ?", totalRequests, userID)
+	//if err != nil {
+	//	return err
+	//}
 
 	return nil
 }
@@ -165,7 +208,7 @@ func createTables(db *sql.DB) error {
 			username TEXT,
 			command TEXT,
 			request_time timestamp,
-		    totalRequests integer
+		    totalRequests integer,
 		);
 	`)
 	return err
