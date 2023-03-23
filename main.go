@@ -38,6 +38,7 @@ func main() {
 	u.Timeout = 60
 
 	updates, err := bot.GetUpdatesChan(u)
+
 	for update := range updates {
 		if update.Message == nil {
 			continue
@@ -46,6 +47,8 @@ func main() {
 		userID, command := update.Message.From.ID, update.Message.Command()
 
 		if command == "" {
+			unk := tgbotapi.NewMessage(update.Message.Chat.ID, "Не понял что ты хочешь")
+			bot.Send(unk)
 			continue
 		}
 
@@ -84,7 +87,6 @@ func handleStatCommand(bot *tgbotapi.BotAPI, update *tgbotapi.Update) {
 	userID := update.Message.From.ID
 	var totalRequests int
 	var firstRequestTime string
-	totalRequests++
 
 	err := db.QueryRow("select count(*), min(request_time) from users where id = ?", userID).
 		Scan(&totalRequests, &firstRequestTime)
@@ -121,7 +123,8 @@ func saveRequest(userID int, username, command string) error {
 	}
 	defer stmt.Close()
 
-	_, err = stmt.Exec(sql.Named("id", userID), sql.Named("username", username), sql.Named("request_time", time.Now()), sql.Named("command", command))
+	_, err = stmt.Exec(sql.Named("id", userID), sql.Named("username", username),
+		sql.Named("request_time", time.Now()), sql.Named("command", command))
 	if err != nil {
 		return err
 	}
@@ -161,7 +164,8 @@ func createTables(db *sql.DB) error {
 		    id integer primary key,
 			username TEXT,
 			command TEXT,
-			request_time timestamp
+			request_time timestamp,
+		    totalRequests integer
 		);
 	`)
 	return err
