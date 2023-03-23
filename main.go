@@ -4,11 +4,12 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"github.com/go-telegram-bot-api/telegram-bot-api"
-	_ "github.com/mattn/go-sqlite3"
 	"log"
 	"net/http"
 	"time"
+
+	"github.com/go-telegram-bot-api/telegram-bot-api"
+	_ "github.com/mattn/go-sqlite3"
 )
 
 type dbConfig struct{ user, password, host, port, dbName string }
