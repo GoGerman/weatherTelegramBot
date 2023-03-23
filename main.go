@@ -4,12 +4,11 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"github.com/go-telegram-bot-api/telegram-bot-api"
+	_ "github.com/mattn/go-sqlite3"
 	"log"
 	"net/http"
 	"time"
-
-	"github.com/go-telegram-bot-api/telegram-bot-api"
-	_ "github.com/mattn/go-sqlite3"
 )
 
 type dbConfig struct{ user, password, host, port, dbName string }
@@ -27,7 +26,12 @@ func main() {
 	if err != nil {
 		log.Printf("Cannot create database: %v\n", err)
 	}
-	defer db.Close()
+	defer func() {
+		err = db.Close()
+		if err != nil {
+			return
+		}
+	}()
 
 	bot, err := tgbotapi.NewBotAPI("6225684885:AAHhd4JF6cIO1eEZ9Vo5jaQvB4A_z9bIQbE")
 	if err != nil {
@@ -51,14 +55,9 @@ func main() {
 		}
 
 		var totalRequests int
-		err := db.QueryRow("select totalRequests from users where id = ?", userID).Scan(&totalRequests)
-		totalRequests++
-		if err != nil {
-			log.Println("Не могу достать количество запросов")
-		}
-		fmt.Println(totalRequests, 0)
-		err = saveRequest(userID, update.Message.From.UserName, command,
-			totalRequests)
+		err = db.QueryRow("select totalRequests from users where id = ?", userID).Scan(&totalRequests)
+
+		err = saveRequest(userID, update.Message.From.UserName, command, totalRequests)
 		if err != nil {
 			log.Printf("Unable to save request: %v\n", err)
 		}
@@ -70,7 +69,7 @@ func main() {
 			handleStatCommand(bot, &update)
 		default:
 			msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Unknown command")
-			if _, err := bot.Send(msg); err != nil {
+			if _, err = bot.Send(msg); err != nil {
 				log.Printf("Unable to send message: %v\n", err)
 			}
 		}
@@ -85,7 +84,7 @@ func handleInfoCommand(bot *tgbotapi.BotAPI, update *tgbotapi.Update) {
 	}
 
 	msg := tgbotapi.NewMessage(update.Message.Chat.ID, weather)
-	if _, err := bot.Send(msg); err != nil {
+	if _, err = bot.Send(msg); err != nil {
 		log.Printf("Unable to send message: %v\n", err)
 	}
 }
@@ -111,66 +110,63 @@ func handleStatCommand(bot *tgbotapi.BotAPI, update *tgbotapi.Update) {
 	}
 }
 
-//func saveRequest(userID int, username, command string) error {
-//	var count int
-//	err := db.QueryRow("select count(*) from users where id = ?", userID).Scan(&count)
-//	if err != nil {
-//		return err
-//	}
-//	if count > 0 {
-//		return nil
-//	}
-//
-//	stmt, err := db.Prepare(`
-//       insert into users (id, username, request_time, command, totalRequests)
-//       values (?, ?, ?, ?, ?)
-//   `)
-//	if err != nil {
-//		return err
-//	}
-//	defer stmt.Close()
-//
-//	_, err = stmt.Exec(sql.Named("id", userID), sql.Named("username", username),
-//		sql.Named("request_time", time.Now()), sql.Named("command", command),
-//		sql.Named("totalRequests", totalRequests))
-//	if err != nil {
-//		return err
-//	}
-//
-//	return nil
-//}
-
 func saveRequest(userID int, username, command string, totalRequests int) error {
-	fmt.Println(totalRequests, 1)
 	var count int
-	err := db.QueryRow("select count(*) from users where id = ?", userID).Scan(&count)
-	if err != nil {
-		return err
+	errCount := db.QueryRow("select count(*) from users where id = ?", userID).Scan(&count)
+	if errCount != nil {
+		return errCount
 	}
 	if count > 0 {
 		return nil
 	}
 
-	stmt, err := db.Prepare(`
-       insert into users (id, username, request_time, command, totalRequests)
-       values (?, ?, ?, ?, ?)
-   `)
-	if err != nil {
-		return err
-	}
-	defer stmt.Close()
+	if totalRequests == 0 {
+		stmt, err := db.Prepare(`
+        insert into users (id, username, request_time, command, totalRequests)
+        values (?, ?, ?, ?, ?)
+        `)
+		if err != nil {
+			return err
+		}
 
-	_, err = stmt.Exec(sql.Named("id", userID), sql.Named("username", username),
-		sql.Named("request_time", time.Now()), sql.Named("command", command),
-		sql.Named("totalRequests", totalRequests+1))
-	if err != nil {
-		return err
-	}
+		defer func() {
+			err = stmt.Close()
+			if err != nil {
+				return
+			}
+		}()
 
-	//_, err = stmt.Exec("insert into users (totalRequests = ?) where id = ?", totalRequests, userID)
-	//if err != nil {
-	//	return err
-	//}
+		_, err = stmt.Exec()
+		if err != nil {
+			return err
+		}
+
+		_, err = stmt.Exec(userID, username, time.Now(), command, 1)
+		if err != nil {
+			return err
+		}
+	} else {
+		stmt, err := db.Prepare(`
+		update users
+		set totalRequests = ?
+		where id = ?
+		`)
+		if err != nil {
+			return err
+		}
+
+		_, err = stmt.Exec(totalRequests+1, userID)
+		if err != nil {
+			return err
+		}
+
+		defer func() {
+			err = stmt.Close()
+			if err != nil {
+				return
+			}
+		}()
+	}
 
 	return nil
 }
@@ -181,7 +177,13 @@ func getWeather(city string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+
+	defer func() {
+		err = resp.Body.Close()
+		if err != nil {
+			return
+		}
+	}()
 
 	var weatherData struct {
 		Main struct {
@@ -205,10 +207,10 @@ func createTables(db *sql.DB) error {
 	_, err := db.Exec(`
 		create table users (
 		    id integer primary key,
-			username TEXT,
-			command TEXT,
+			username TEXT NOT NULL,
+			command TEXT NOT NULL,
 			request_time timestamp,
-		    totalRequests integer,
+		    totalRequests integer default 0
 		);
 	`)
 	return err
