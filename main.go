@@ -112,50 +112,39 @@ func handleStatCommand(bot *tgbotapi.BotAPI, update *tgbotapi.Update) {
 
 func saveRequest(userID int, username, command string, totalRequests int) error {
 	var count int
-	errCount := db.QueryRow("select count(*) from users where id = ?", userID).Scan(&count)
-	if errCount != nil {
-		return errCount
-	}
-	if count > 0 {
-		return nil
+	err := db.QueryRow("select count(*) from users where id = ?", userID).Scan(&count)
+	if err != nil {
+		return err
 	}
 
 	if totalRequests == 0 {
-		stmt, err := db.Prepare(`
+		stmt, _ := db.Prepare(`
         insert into users (id, username, request_time, command, totalRequests)
         values (?, ?, ?, ?, ?)
         `)
 		if err != nil {
 			return err
 		}
+		defer stmt.Close()
 
-		defer func() {
-			err = stmt.Close()
-			if err != nil {
-				return
-			}
-		}()
-
-		_, err = stmt.Exec()
-		if err != nil {
-			return err
-		}
+		stmt.Exec()
 
 		_, err = stmt.Exec(userID, username, time.Now(), command, 1)
 		if err != nil {
 			return err
 		}
+
 	} else {
 		stmt, err := db.Prepare(`
-		update users
-		set totalRequests = ?
-		where id = ?
+		UPDATE users
+		SET totalRequests = totalRequests + 1
+		WHERE id = ?
 		`)
 		if err != nil {
 			return err
 		}
 
-		_, err = stmt.Exec(totalRequests+1, userID)
+		_, err = stmt.Exec(userID)
 		if err != nil {
 			return err
 		}
